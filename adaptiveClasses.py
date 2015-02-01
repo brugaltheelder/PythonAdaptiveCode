@@ -24,14 +24,19 @@ class imrt_data(object):
         self.structPerVoxel = np.array(matFile['structs']).flatten()
         self.pickstructs = map(str, matFile['pickstructs'])
 
+        self.structBounds = np.array(matFile['structurebounds'])
+        self.structGamma = np.array(matFile['eudweights']).flatten()
+
         # todo read in scenario data file location and data file
+        self.numscenarios = 2
+        self.scneariovalues = numpy.array([1.2, 2.3])
 
 
 class scenario(object):
     def __init__(self, data, num, m):
         assert (isinstance(data, imrt_data))
         self.num = num
-        # todo save scenario-specific data to scenario data variables (i.e. self.scenData or something)
+        self.scenValue = data.scneariovalues(self.num)
         print 'building scenario', self.num
         # build dose variables
         self.z2 = [m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS) for i in xrange(data.nVox)]
@@ -44,7 +49,10 @@ class scenario(object):
                             column=Column(np.array(data.Dmat.getrow(i).todense()).flatten().tolist(), self.doseConstr2))
                    for i in xrange(data.nBix)]
         m.update()
-        #todo build z\inZ constraints
+
+        # todo
+
+
 
 
 # Model class
@@ -71,7 +79,7 @@ class imrt_stochastic_model(object):
         self.m.update()
         print 'Stage-one Dose Constraint Built'
 
-        # todo build stage one Z
+
 
         # Uncomment to write out model
         # print 'Writing out model'
@@ -79,7 +87,7 @@ class imrt_stochastic_model(object):
         #print 'Model writing done'
 
         #todo Initialize scenarios (which build other gurobi variables for overall Zs)
-
+        self.scenarios = [scenario(self.data, s, self.m) for s in range(self.data.numscenarios)]
 
         #todo initizlize stochastic class
 
@@ -93,12 +101,15 @@ class imrt_stochastic_model(object):
 class imrt_structure(object):
     def __init__(self, data, index):
         assert (isinstance(data, imrt_data))
-        self.name = data.pickstructs[index - 1]  # ASSUMES ANAT INDEXING STARTS AT 1 TODO FIX THIS SO IT STARTS AT 0
+        self.name = data.pickstructs[
+            index - 1]  # ASSUMES ANAT INDEXING STARTS AT 1 TODO FIX THIS SO IT STARTS AT 0, also below
         self.index = index
         self.voxels = np.where(data.structPerVoxel == index)[0]
         self.size = self.voxels.size
+        self.z1bounds = data.structBounds[index - 1, 0:4]
+        self.z2bounds = data.structBounds[index - 1, 4:8]
+        self.zSbounds = data.structBounds[index - 1, 8:12]
 
-        # todo save structural bounds for each type
 
 
 # adaLung class
