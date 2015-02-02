@@ -22,6 +22,7 @@ class imrt_data(object):
         self.maskValue = np.array(matFile['maskValue']).flatten()
         self.structPerVoxel = np.array(matFile['structs']).flatten()
         self.pickstructs = map(str, matFile['pickstructs'])
+
         self.stageOneFraction = 0.2  # todo read this in from data file
 
 
@@ -29,18 +30,22 @@ class imrt_data(object):
         self.structGamma = np.array(matFile['eudweights']).flatten()
 
         # todo read in scenario data file location and data file
+        # todo add in switch for adaptive type
+
+
         self.numscenarios = 2
         self.scneariovalues = np.array([1.2, 2.3])
 
 
-class scenario(object):
+class imrt_scenario(object):
     def __init__(self, data, num, m, z1dose):
         assert (isinstance(data, imrt_data))
         self.num = num
-        self.scenValue = data.scneariovalues[self.num]
+
         print 'building scenario', self.num
         # build dose variables
-        self.z2 = [m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS) for j in xrange(data.nVox)]
+        self.z2 = [m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS, name='z2_' + str(self.num) + '_' + str(j)) for j in
+                   xrange(data.nVox)]
         m.update()
         #initialize dose constraint
         self.doseConstr2 = [m.addConstr(-self.z2[j], GRB.EQUAL, 0) for j in xrange(data.nVox)]
@@ -55,11 +60,22 @@ class scenario(object):
         m.update()
         self.zLinkingConstraint = [m.addConstr(self.zS[j], GRB.EQUAL,
                                                data.stageOneFraction * z1dose[j] + (1 - data.stageOneFraction) *
-                                               self.z2[j], name="zlinking") for j in range(data.nVox)]
+                                               self.z2[j], name="zlinking_" + str(self.num) + "_" + str(j)) for j in
+                                   range(data.nVox)]
         m.update()
 
 
+class imrt_adaptiveLung(object):
+    # initizlize class
+    def __init__(self, data, m, scenarios, structure):
+        # open  up data file, read into this specific structure
 
+        # update scenario's data variables
+
+        # build objective todo write objective function generator
+
+        # build constraints todo write constraint function generator
+        pass
 
 
 
@@ -75,7 +91,8 @@ class imrt_stochastic_model(object):
 
         # Build stage 1 gurobi variables (x,z) and dose constraint
         print 'Building Stage 1 Gurobi Variables'
-        self.z1 = [self.m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS) for i in xrange(self.data.nVox)]
+        self.z1 = [self.m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS, name='z1_' + str(j)) for j in
+                   xrange(self.data.nVox)]
         self.m.update()
         print 'Building Stage-one Dose Constraint'
         self.doseConstr1 = [self.m.addConstr(-self.z1[j], GRB.EQUAL, 0) for j in xrange(self.data.nVox)]
@@ -83,22 +100,22 @@ class imrt_stochastic_model(object):
         print 'Populating Stage-one Dose Constraint'
         self.x1 = [self.m.addVar(lb=0, vtype=GRB.CONTINUOUS,
                                  column=Column(np.array(self.data.Dmat.getrow(i).todense()).flatten().tolist(),
-                                               self.doseConstr1)) for i in xrange(self.data.nBix)]
+                                               self.doseConstr1), name='x1_' + str(i)) for i in xrange(self.data.nBix)]
         self.m.update()
         print 'Stage-one Dose Constraint Built'
 
-
-
-
-        # todo initizlize structures
+        print 'initializing structures'
         self.structures = [imrt_structure(self.data, s) for s in range(1, self.data.nStructs + 1)]
 
-        #todo Initialize scenarios (which build other gurobi variables for overall Zs)
-        self.scenarios = [scenario(self.data, s, self.m, self.z1) for s in range(self.data.numscenarios)]
+        print 'initializing scenarios'
+        self.scenarios = [imrt_scenario(self.data, s, self.m, self.z1) for s in range(self.data.numscenarios)]
 
-        #todo build all structure constraints (as a structure method)
+        print 'building structure-specific constraints'
+        for s in range(self.data.nStructs):
+            self.structures[s].buildConstraints(self.data, self.m, self.z1, self.scenarios)
 
-        #todo initizlize stochastic class
+
+            #todo initizlize adaptive class
 
         # Uncomment to write out model
         # print 'Writing out model'
@@ -109,7 +126,7 @@ class imrt_stochastic_model(object):
     def callSolver(self):
         self.m.optimize()
 
-        # todo make function that builds bounds for each structure (sets of bounds: Z1, Z2S, ZS, min mean max eud)
+
 
 
 # Structure class
@@ -127,15 +144,15 @@ class imrt_structure(object):
 
     def buildConstraints(self, data, m, z1dose, scenarios):
         # for each set of bounds, for each bound value (if >0), build constraint
-        assert (isinstance(scenarios, scenario))
-        print 'Generating bounds for z1'
+
+        print 'Generating bounds for structure number', self.index, '(', self.name, ')for z1'
         #z1bounds
         for b in range(len(self.z1bounds)):
             if self.z1bounds[b] > 0 and b == 0:
                 #min constraint
                 self.buildMinBound(z1dose, m, self.z1bounds[b])
 
-            elif self.z1bounds[b] > 0 and b == 1:
+            elif self.z1bounds[b] != 0 and b == 1:
                 # mean constraint
                 self.buildMeanBound(z1dose, m, self.z1bounds[b])
 
@@ -143,85 +160,113 @@ class imrt_structure(object):
                 # max constraint
                 self.buildMaxBound(z1dose, m, self.z1bounds[b])
 
-            elif self.z1bounds[b] > 0 and b == 4:
+            elif self.z1bounds[b] > 0 and b == 3:
                 self.z1eud = self.buildEUDBound(z1dose, m, self.z1bounds[b], data)
-        print 'Generating bounds for z2'
+        print 'Generating bounds for structure number', self.index, '(', self.name, ')for z2'
         # z2bounds
         for b in range(len(self.z2bounds)):
             if self.z2bounds[b] > 0 and b == 0:
                 #min constraint
-                self.buildMinBound(scenarios.z2, m, self.z2bounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMinBound(scenarios[s].z2, m, self.z2bounds[b], s)
 
-            elif self.z2bounds[b] > 0 and b == 1:
+            elif self.z2bounds[b] != 0 and b == 1:
                 #mean constraint
-                self.buildMeanBound(scenarios.z2, m, self.z2bounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMeanBound(scenarios[s].z2, m, self.z2bounds[b], s)
 
             elif self.z2bounds[b] > 0 and b == 2:
                 #max constraint
-                self.buildMaxBound(scenarios.z2, m, self.z2bounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMaxBound(scenarios[s].z2, m, self.z2bounds[b], s)
 
-            elif self.z2bounds[b] > 0 and b == 4:
-                self.z2eud = self.buildEUDBound(scenarios.z2, m, self.z2bounds[b], data)
+            elif self.z2bounds[b] > 0 and b == 3:
+                for s in range(data.numscenarios):
+                    self.z2eud = self.buildEUDBound(scenarios[s].z2, m, self.z2bounds[b], data, s)
 
-        print 'Generating bounds for zS'
+        print 'Generating bounds for structure number', self.index, '(', self.name, ')for zS'
         #zSbounds
         for b in range(len(self.zSbounds)):
             if self.zSbounds[b] > 0 and b == 0:
                 #min constraint
-                self.buildMinBound(scenarios.zS, m, self.zSbounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMinBound(scenarios[s].zS, m, self.zSbounds[b], s)
 
-            elif self.zSbounds[b] > 0 and b == 1:
+            elif self.zSbounds[b] != 0 and b == 1:
                 #mean constraint
-                self.buildMeanBound(scenarios.zS, m, self.zSbounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMeanBound(scenarios[s].zS, m, self.zSbounds[b], s)
 
             elif self.zSbounds[b] > 0 and b == 2:
                 #max constraint
-                self.buildMaxBound(scenarios.zS, m, self.zSbounds[b])
+                for s in range(data.numscenarios):
+                    self.buildMaxBound(scenarios[s].zS, m, self.zSbounds[b], s)
 
-            elif self.zSbounds[b] > 0 and b == 4:
-                self.zSeud = self.buildEUDBound(scenarios.zS, m, self.zSbounds[b], data)
+            elif self.zSbounds[b] > 0 and b == 3:
+                for s in range(data.numscenarios):
+                    self.zSeud = self.buildEUDBound(scenarios[s].zS, m, self.zSbounds[b], data, s)
 
 
-    def buildMinBound(self, doseVector, m, bound):
-        print "Building min bound on structure", self.index
+    def buildMinBound(self, doseVector, m, bound, scen=-1):
+        print "Building min bound on structure", self.index,
+        if scen != -1:
+            print 'scenario', scen
+        else:
+            print ""
         for j in range(self.size):
-            doseVector[self.index[j]].setAttr("LB", bound)
+            doseVector[self.voxels[j]].setAttr("LB", bound)
         m.update()
 
-    def buildMaxBound(self, doseVector, m, bound):
-        print "Building max bound on structure", self.index
+    def buildMaxBound(self, doseVector, m, bound, scen=-1):
+        print "Building max bound on structure", self.index,
+        if scen != -1:
+            print 'scenario', scen
+        else:
+            print ""
         for j in range(self.size):
-            doseVector[self.index[j]].setAttr("UB", bound)
+            doseVector[self.voxels[j]].setAttr("UB", bound)
         m.update()
 
-    def buildMeanBound(self, doseVector, m, bound):
-        print "Building mean bound on structure", self.index
-        meanHolderVar = m.addVar(lb=-GRB.INFINITY, ub=bound, vtype=GRB.CONTINUOUS)
+    def buildMeanBound(self, doseVector, m, bound, scen=-1):
+        print "Building mean bound on structure", self.index,
+        if scen != -1:
+            print 'scenario', scen
+        else:
+            print ""
+        if bound > 0:
+            meanHolderVar = m.addVar(lb=-GRB.INFINITY, ub=bound, vtype=GRB.CONTINUOUS)
+        else:
+            meanHolderVar = m.addVar(lb=-bound, vtype=GRB.CONTINUOUS)
         m.update()
-        m.addConstr(quicksum(doseVector[self.index[j]] for j in range(self.size)) == meanHolderVar)
+        m.addConstr(quicksum(doseVector[self.voxels[j]] for j in range(self.size)), GRB.EQUAL,
+                    self.size * meanHolderVar, name='meanBoundConstr_' + str(self.index))
         m.update()
 
-    def buildEUDBound(self, doseVector, m, bound, data):
-        print "Building eud bound on structure", self.index
-        assert (isinstance(data, imrt_data))
+    def buildEUDBound(self, doseVector, m, bound, data, scen=-1):
+        print "Building eud bound on structure", self.index,
+        if scen != -1:
+            print 'scenario', scen
+        else:
+            print ""
         # build mean holder
         meanHolderVar = m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS)
         m.update()
-        m.addConstr(quicksum(doseVector[self.index[j]] for j in range(self.size)), GRB.EQUAL, meanHolderVar)
+        m.addConstr(quicksum(doseVector[self.voxels[j]] for j in range(self.size)), GRB.EQUAL, meanHolderVar)
         m.update()
         # build upper or lower bound
         boundHolderVar = m.addVar(lb=0, vtype=GRB.CONTINUOUS)
+        m.update()
         if self.index in data.targets:
             for j in range(self.size):
-                m.addConstr(boundHolderVar, GRB.LESS_EQUAL, doseVector[self.index[j]])
+                m.addConstr(boundHolderVar, GRB.LESS_EQUAL, doseVector[self.voxels[j]])
             doseEUD = m.addVar(lb=bound, vtype=GRB.CONTINUOUS)
         else:
             for j in range(self.size):
-                m.addConstr(boundHolderVar, GRB.GREATER_EQUAL, doseVector[self.index[j]])
+                m.addConstr(boundHolderVar, GRB.GREATER_EQUAL, doseVector[self.voxels[j]])
             doseEUD = m.addVar(lb=0, ub=bound, vtype=GRB.CONTINUOUS)
         m.update()
         m.addConstr(doseEUD, GRB.EQUAL, data.structGamma[self.index - 1] * meanHolderVar + (
-        1 - data.structGamma[self.index - 1]) * boundHolderVar)
+            1 - data.structGamma[self.index - 1]) * boundHolderVar, name='eudConstr_' + str(self.index))
         m.update()
         return doseEUD
 
