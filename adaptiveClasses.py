@@ -3,7 +3,7 @@ __author__ = 'troy'
 from scipy import io
 import scipy.sparse as sps
 import numpy as np
-from math import exp
+from math import exp, log
 from gurobipy import *
 
 
@@ -70,7 +70,12 @@ class imrt_adaptiveLung(object):
     # initizlize class
     def __init__(self, data, m, scenarios, structure):
         # open  up data file, read into this specific structure
+        # option 1 is expect bound
+        #option 2 is any scenario bound
         assert (isinstance(data, imrt_data))
+
+        self.lungMeanVars
+
 
         adaMatFile = io.loadmat(data.adaptiveFilename)
         self.nscen = adaMatFile['nscen']
@@ -95,30 +100,55 @@ class imrt_adaptiveLung(object):
         self.ptvLower = adaMatFile['ptvLower']
         self.ptvUpper = adaMatFile['ptvUpper']
         self.alpha = adaMatFile['alpha']
+        self.option = adaMatFile['option']
+
+
+    def buildPWLforObj(self, data, struct):
+        assert (isinstance(struct, imrt_structure))
+        print 'building pwl objective'
+        # build PWL points
+        resolution = 0.5
+        self.objX, self.objY = [], []
+        currentX = self.ptvStrictLower  # todo add EUD bound to data file
+        while currentX < self.ptvUpper:
+            self.objX.append(currentX)
+            self.objY.append(self.getObjFtn(currentX))
+            currentX = currentX + resolution
+        self.ptvLooseLower = (self.objX[1] - self.objX[0]) / (self.objY[1] - self.objY[0]) * (
+            self.objX[0] * (self.objY[1] - self.objY[0]) / (self.objX[1] - self.objX[0]) - self.objY[0])
+        print 'loose obj bound', self.ptvLooseLower
+
+    def buildHardScenarioLungBounds(self, data, m, scenarios, struct):
+        assert (isinstance(struct, imrt_structure))
+        assert (isinstance(data, imrt_data))
+        self.option1MeanLungBounds = []
+        for i in range(self.nscen):
+            self.option1MeanLungBounds.append((-self.gamma02) / (self.gamma12 + self.gamma22 * self.biomarkers[i]))
+        self.option2MeanLungBounds = []
+        for i in range(self.nscen):
+            self.option2MeanLungBounds.append((log((1 - self.alpha) / self.alpha) - self.gamma02) / (
+            self.gamma12 + self.gamma22 * self.biomarkers[i]))
+
+        for i in range(self.nscen):
+            if self.option == 1:
+                self.lungMeanVars[i].setAttr('UB', self.option1MeanLungBounds[i])
+            elif self.option == 2:
+                self.lungMeanVars[i].setAttr('UB', self.option2MeanLungBounds[i])
+        m.update()
+
 
 
     # build objective todo write objective function generator
     def buildObjective(self, data, m, scenarios, struct):
-        assert (isinstance(struct, imrt_structure))
-        # build PWL points
-        resolution = 0.5
-        objX, objY = [], []
-        currentX = self.ptvStrictLower  #todo add EUD bound to data file
-        while currentX < self.ptvUpper:
-            objX.append(currentX)
-            objY.append(self.getObjFtn(currentX))
-            currentX = currentX + resolution
-        self.ptvLooseLower = (objX[1] - objX[0]) / (objY[1] - objY[0]) * (
-        objX[0] * (objY[1] - objY[0]) / (objX[1] - objX[0]) - objY[0])
-
-        pass
+        self.buildPWLforObj(data, struct)
+        #build gurobi stuff
 
     def getObjFtn(self, x):
         return pow(self.s02, exp(self.beta0 - self.beta1 *x))
 
     # build constraints todo write constraint function generator
     def buildAdaptiveConstraint(self, data, m, scenarios, struct):
-        pass
+
 
 
 # adaLung class
@@ -208,7 +238,7 @@ class imrt_structure(object):
                 self.buildMaxBound(z1dose, m, self.z1bounds[b])
 
             elif self.z1bounds[b] > 0 and b == 3:
-                self.z1eud = self.buildEUDBound(z1dose, m, self.z1bounds[b], data)
+                self.z1eud = self.buildEUDBound(z1dose, m, self.z1bounds[b], data)[0]
         print 'Generating bounds for structure number', self.index, '(', self.name, ')for z2'
         # z2bounds
         for b in range(len(self.z2bounds)):
@@ -229,7 +259,7 @@ class imrt_structure(object):
 
             elif self.z2bounds[b] > 0 and b == 3:
                 for s in range(data.numscenarios):
-                    self.z2eud = self.buildEUDBound(scenarios[s].z2, m, self.z2bounds[b], data, s)
+                    self.z2eud = self.buildEUDBound(scenarios[s].z2, m, self.z2bounds[b], data, s)[0]
 
         print 'Generating bounds for structure number', self.index, '(', self.name, ')for zS'
         #zSbounds
@@ -251,7 +281,7 @@ class imrt_structure(object):
 
             elif self.zSbounds[b] > 0 and b == 3:
                 for s in range(data.numscenarios):
-                    self.zSeud = self.buildEUDBound(scenarios[s].zS, m, self.zSbounds[b], data, s)
+                    self.zSeud = self.buildEUDBound(scenarios[s].zS, m, self.zSbounds[b], data, s)[0]
 
 
     def buildMinBound(self, doseVector, m, bound, scen=-1):
@@ -282,12 +312,15 @@ class imrt_structure(object):
             print ""
         if bound > 0:
             meanHolderVar = m.addVar(lb=-GRB.INFINITY, ub=bound, vtype=GRB.CONTINUOUS)
-        else:
+        elif bound <0:
             meanHolderVar = m.addVar(lb=-bound, vtype=GRB.CONTINUOUS)
+        else:
+            meanHolderVar = m.addVar(lb=0, vtype=GRB.CONTINUOUS)
         m.update()
         m.addConstr(quicksum(doseVector[self.voxels[j]] for j in range(self.size)), GRB.EQUAL,
                     self.size * meanHolderVar, name='meanBoundConstr_' + str(self.index))
         m.update()
+        return meanHolderVar
 
     def buildEUDBound(self, doseVector, m, bound, data, scen=-1):
         print "Building eud bound on structure", self.index,
@@ -319,7 +352,7 @@ class imrt_structure(object):
         m.addConstr(doseEUD, GRB.EQUAL, data.structGamma[self.index - 1] * meanHolderVar + (
             1 - data.structGamma[self.index - 1]) * boundHolderVar, name='eudConstr_' + str(self.index))
         m.update()
-        return doseEUD
+        return doseEUD, meanHolderVar
 
 
 
