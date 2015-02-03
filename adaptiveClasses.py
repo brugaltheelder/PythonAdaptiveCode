@@ -68,14 +68,11 @@ class imrt_scenario(object):
 
 class imrt_adaptiveLung(object):
     # initizlize class
-    def __init__(self, data, m, scenarios, structure):
+    def __init__(self, data, m, scenarios, structures):
         # open  up data file, read into this specific structure
         # option 1 is expect bound
         #option 2 is any scenario bound
         assert (isinstance(data, imrt_data))
-
-        self.lungMeanVars
-
 
         adaMatFile = io.loadmat(data.adaptiveFilename)
         self.nscen = adaMatFile['nscen']
@@ -102,9 +99,97 @@ class imrt_adaptiveLung(object):
         self.alpha = adaMatFile['alpha']
         self.option = adaMatFile['option']
 
+        ##build PWL values
+        self.buildPWLforObj(data)
+        self.buildPWLforOption1Constraint(data)
 
-    def buildPWLforObj(self, data, struct):
+        ##build objective, add to model
+        self.buildObj(data, m, scenarios, structures[self.ptvstruct])
+
+        ##build lung means
+        self.lungMeanVars = [structures[self.lungstruct].buildMeanBound(scenarios[s].zS, m, 0, s) for s in
+                             range(self.nscen)]
+
+        self.buildHardScenarioLungBounds(data, m, scenarios, structures[self.lungstruct])
+
+        ##do the bounding based on option
+        if self.option == 1:
+            self.buildPWLoption1Constraints(data, m, scenarios)
+        elif self.option == 2:
+            pass
+        else:
+            print 'Invalid option parameter'
+            exit()
+
+    def buildPWLoption1Constraints(self, data, m, scenarios):
+        self.lungMeanPWLvars = [m.addVar(lb=0, vtype=GRB.CONTINUOUS) for s in range(self.nscen)]
+        m.update()
+        for s in range(self.nscen):
+            for x in range(len(self.option1X) - 1):
+                lhs = LinExpr()
+                if (self.option1X[s][x] - self.option1X[s][x + 1] == 0):
+                    coef = -(self.option1X[s][x + 1] - self.option1X[s][x]) / (
+                        self.option1Y[s][x + 1] - self.option1Y[s][x])
+                    ub = self.option1X[s][x] - ((self.option1X[s][x + 1] - self.option1X[s][x]) / (
+                        self.option1Y[s][x + 1] - self.option1Y[s][x])) * (self.option1Y[s][x])
+                    lhs += self.lungMeanVars[s]
+                    lhs += coef * self.lungMeanPWLvars[s]
+                    m.addConstr(lhs, GRB.LESS_EQUAL, ub)
+                else:
+                    coef = -(self.option1Y[s][x + 1] - self.option1Y[s][x]) / (
+                        self.option1X[s][x + 1] - self.option1X[s][x])
+                    ub = self.option1Y[s][x] - ((self.option1Y[s][x + 1] - self.option1Y[s][x]) / (
+                        self.option1X[s][x + 1] - self.option1X[s][x])) * (self.option1X[s][x])
+                    lhs += coef * self.lungMeanVars[s]
+                    lhs += self.lungMeanPWLvars[s]
+                    m.addConstr(lhs, GRB.LESS_EQUAL, ub)
+        m.update()
+        # now do linking constraints
+        linkingExpr = LinExpr()
+        for s in range(self.nscen):
+            linkingExpr += self.scenprobs[s] * self.lungMeanPWLvars[s]
+        m.addConstr(linkingExpr, GRB.GREATER_EQUAL, self.alpha)
+        m.update()
+
+
+    def buildObj(self, data, m, scenarios, struct):
         assert (isinstance(struct, imrt_structure))
+        # gen EUDs
+        self.ptvEUD = [struct.buildEUDBound(scenarios[s].zS, m, 0, data, s) for s in range(self.nscen)]
+        m.update()
+        # set loose lower bounds
+        for s in range(self.nscen):
+            self.ptvEUD[s].setAttr("LB", self.ptvLooseLower)
+        m.update()
+        self.ptvObjPWLvars = [m.addVar(lb=0, vtype=GRB.CONTINUOUS) for s in range(self.nscen)]
+        m.update()
+        for s in range(self.nscen):
+            for x in range(len(self.objX) - 1):
+                lhs = LinExpr()
+                if (self.objX[x] - self.objX[x + 1] == 0):
+                    coef = -(self.objX[x + 1] - self.objX[x]) / (self.objY[x + 1] - self.objY[x])
+                    ub = self.objX[x] - (self.objX[x + 1] - self.objX[x]) / (self.objY[x + 1] - self.objY[x]) * \
+                                        self.objY[x]
+                    lhs += self.ptvEUD[s]
+                    lhs += coef * self.ptvObjPWLvars[s]
+                    m.addConstr(lhs, GRB.LESS_EQUAL, ub)
+                else:
+                    coef = -(self.objY[x + 1] - self.objY[x]) / (self.objX[x + 1] - self.objX[x])
+                    ub = self.objY[x] - (self.objY[x + 1] - self.objY[x]) / (self.objX[x + 1] - self.objX[x]) * \
+                                        self.objX[x]
+                    lhs += coef * self.ptvEUD[s]
+                    lhs += self.ptvObjPWLvars[s]
+                    m.addConstr(lhs, GRB.LESS_EQUAL, ub)
+
+        self.obj = LinExpr()
+        for s in range(self.nscen):
+            self.obj += self.scenprobs * self.ptvObjPWLvars[s]
+        m.setObjective(self.obj)
+        m.setAttr("ModelSense", -1)
+        m.update()
+
+    def buildPWLforObj(self, data):
+
         print 'building pwl objective'
         # build PWL points
         resolution = 0.5
@@ -117,6 +202,20 @@ class imrt_adaptiveLung(object):
         self.ptvLooseLower = (self.objX[1] - self.objX[0]) / (self.objY[1] - self.objY[0]) * (
             self.objX[0] * (self.objY[1] - self.objY[0]) / (self.objX[1] - self.objX[0]) - self.objY[0])
         print 'loose obj bound', self.ptvLooseLower
+
+    def buildPWLforOption1Constraint(self, data):
+        self.option1X, self.option1Y = [], []
+
+        for i in range(self.nscen):
+            currentX = 0
+            upperLimit = -self.gamma02 / (self.gamma12 + self.gamma22 * self.biomarkers[i])
+            xHolder, yHolder = [], []
+            while currentX < upperLimit:
+                xHolder.append(currentX)
+                yHolder.append(self.getOption1Function(currentX, self.biomarkers[i]))
+            self.option1X.append(xHolder)
+            self.option1Y.append(yHolder)
+
 
     def buildHardScenarioLungBounds(self, data, m, scenarios, struct):
         assert (isinstance(struct, imrt_structure))
@@ -137,6 +236,9 @@ class imrt_adaptiveLung(object):
         m.update()
 
 
+    def getOption1Function(self, x, biomarker):
+        return 1 / (1 + exp(self.gamma02 + (self.gamma12 + self.gamma22 * biomarker) * x))
+
 
     # build objective todo write objective function generator
     def buildObjective(self, data, m, scenarios, struct):
@@ -148,7 +250,7 @@ class imrt_adaptiveLung(object):
 
     # build constraints todo write constraint function generator
     def buildAdaptiveConstraint(self, data, m, scenarios, struct):
-
+        pass
 
 
 # adaLung class
