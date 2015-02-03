@@ -6,7 +6,7 @@ from adaptiveClasses import *
 
 # execute run function
 
-stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat')
+stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'adaLungScen2_equi.mat')
 
 
 

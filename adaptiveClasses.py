@@ -9,7 +9,7 @@ from gurobipy import *
 
 # Data class
 class imrt_data(object):
-    def __init__(self, inputFilename):
+    def __init__(self, inputFilename, adaptiveFilename):
         matFile = io.loadmat(inputFilename)
         self.nVox, self.nBix, self.nDijs, self.nStructs = int(matFile['nvox']), int(matFile['nbixel']), int(
             matFile['numdijs']), int(matFile['numstructs'])
@@ -31,10 +31,10 @@ class imrt_data(object):
 
         # todo read in scenario data file location and data file
         # todo add in switch for adaptive type
+        self.adaptiveFilename = adaptiveFilename
+        adaptiveFile = io.loadmat(self.adaptiveFilename)
+        self.numscenarios = adaptiveFile['nscen']
 
-
-        self.numscenarios = 2
-        self.scneariovalues = np.array([1.2, 2.3])
 
 
 class imrt_scenario(object):
@@ -69,13 +69,39 @@ class imrt_adaptiveLung(object):
     # initizlize class
     def __init__(self, data, m, scenarios, structure):
         # open  up data file, read into this specific structure
+        assert (isinstance(data, imrt_data))
+
+        adaMatFile = io.loadmat(data.adaptiveFilename)
+        self.nscen = adaMatFile['nscen']
+        self.beta0 = adaMatFile['beta0']
+        self.beta1 = adaMatFile['beta1']
+        self.gamma02 = adaMatFile['gamma02']
+        self.gamma12 = adaMatFile['gamma12']
+        self.gamma22 = adaMatFile['gamma22']
+        self.s02 = adaMatFile['s02']
 
         # update scenario's data variables
+        self.biomarkers = np.array(adaMatFile['biomarkers']).flatten()
+        self.scenprobs = np.array(adaMatFile['scenprob']).flatten()
 
-        # build objective todo write objective function generator
+        # read in which structures go to which objective
+        self.ptvstruct = adaMatFile['ptvStruct']
+        self.lungstruct = adaMatFile['lungStruct']
 
-        # build constraints todo write constraint function generator
+
+    # build objective todo write objective function generator
+    def buildObjective(self, data, m, scenarios, struct):
         pass
+
+    # build constraints todo write constraint function generator
+    def buildAdaptiveConstraint(self, data, m, scenarios, struct):
+        pass
+
+
+# adaLung class
+
+# todo reads in separate data file
+
 
 
 
@@ -125,8 +151,6 @@ class imrt_stochastic_model(object):
 
     def callSolver(self):
         self.m.optimize()
-
-
 
 
 # Structure class
@@ -270,9 +294,7 @@ class imrt_structure(object):
         m.update()
         return doseEUD
 
-# adaLung class
 
-# todo reads in separate data file
 
 
 
