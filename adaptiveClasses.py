@@ -3,6 +3,7 @@ __author__ = 'troy'
 from scipy import io
 import scipy.sparse as sps
 import numpy as np
+from math import exp
 from gurobipy import *
 
 
@@ -25,7 +26,7 @@ class imrt_data(object):
 
         self.stageOneFraction = 0.2  # todo read this in from data file
 
-
+        # todo update these in mat file with structParams .txt file (eud weights too)
         self.structBounds = np.array(matFile['structurebounds'])
         self.structGamma = np.array(matFile['eudweights']).flatten()
 
@@ -80,6 +81,7 @@ class imrt_adaptiveLung(object):
         self.gamma22 = adaMatFile['gamma22']
         self.s02 = adaMatFile['s02']
 
+        #todo update matlab file with biomarker values from scenarios.txt
         # update scenario's data variables
         self.biomarkers = np.array(adaMatFile['biomarkers']).flatten()
         self.scenprobs = np.array(adaMatFile['scenprob']).flatten()
@@ -88,10 +90,31 @@ class imrt_adaptiveLung(object):
         self.ptvstruct = adaMatFile['ptvStruct']
         self.lungstruct = adaMatFile['lungStruct']
 
+        # todo add these to matlab file
+        self.ptvStrictLower = adaMatFile['ptvStrictLower']
+        self.ptvLower = adaMatFile['ptvLower']
+        self.ptvUpper = adaMatFile['ptvUpper']
+        self.alpha = adaMatFile['alpha']
+
 
     # build objective todo write objective function generator
     def buildObjective(self, data, m, scenarios, struct):
+        assert (isinstance(struct, imrt_structure))
+        # build PWL points
+        resolution = 0.5
+        objX, objY = [], []
+        currentX = self.ptvStrictLower  #todo add EUD bound to data file
+        while currentX < self.ptvUpper:
+            objX.append(currentX)
+            objY.append(self.getObjFtn(currentX))
+            currentX = currentX + resolution
+        self.ptvLooseLower = (objX[1] - objX[0]) / (objY[1] - objY[0]) * (
+        objX[0] * (objY[1] - objY[0]) / (objX[1] - objX[0]) - objY[0])
+
         pass
+
+    def getObjFtn(self, x):
+        return pow(self.s02, exp(self.beta0 - self.beta1 *x))
 
     # build constraints todo write constraint function generator
     def buildAdaptiveConstraint(self, data, m, scenarios, struct):
@@ -280,14 +303,18 @@ class imrt_structure(object):
         # build upper or lower bound
         boundHolderVar = m.addVar(lb=0, vtype=GRB.CONTINUOUS)
         m.update()
-        if self.index in data.targets:
+        if self.index in data.targets and bound>0:
             for j in range(self.size):
                 m.addConstr(boundHolderVar, GRB.LESS_EQUAL, doseVector[self.voxels[j]])
             doseEUD = m.addVar(lb=bound, vtype=GRB.CONTINUOUS)
-        else:
+        elif bound>0:
             for j in range(self.size):
                 m.addConstr(boundHolderVar, GRB.GREATER_EQUAL, doseVector[self.voxels[j]])
             doseEUD = m.addVar(lb=0, ub=bound, vtype=GRB.CONTINUOUS)
+        else:
+            for j in range(self.size):
+                m.addConstr(boundHolderVar, GRB.LESS_EQUAL, doseVector[self.voxels[j]])
+            doseEUD = m.addVar(lb=0, vtype=GRB.CONTINUOUS)
         m.update()
         m.addConstr(doseEUD, GRB.EQUAL, data.structGamma[self.index - 1] * meanHolderVar + (
             1 - data.structGamma[self.index - 1]) * boundHolderVar, name='eudConstr_' + str(self.index))
