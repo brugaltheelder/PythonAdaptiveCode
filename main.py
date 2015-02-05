@@ -6,9 +6,25 @@ from adaptiveClasses import *
 
 # execute run function
 
-# stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'adaLungScen2_equi.mat') # no long working
+# initizlize instance of stochastic model this basically does everything other than solve the model.
+# If you want it to only add bits, then just change how the constructor works (i.e. add in
+# functions for tasks like adding the constraints, making dose, etc outside of the constructor and
+# call them from here
 
-stoch_mod = imrt_stochastic_model('lung45ProblemData.mat', 'lung45_4scen_equiprob.mat')
+stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'lungmpc5_2scen_test_1.mat')  # no long working
+
+# This is another instance that runs that is larger
+# stoch_mod = imrt_stochastic_model('lung45ProblemData.mat', 'lung45_4scen_equiprob.mat')
 
 
+# This solves whatever the model state is
+stoch_mod.callSolver()
 
+# This is a function that calls my cleanup subroutines for my specific class (see ADA on end?)
+stoch_mod.initializeCleanupADA()
+
+# Solve the new model
+stoch_mod.callSolver()
+
+# Output the model
+stoch_mod.outputVariablesADA()
