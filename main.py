@@ -11,7 +11,7 @@ from adaptiveClasses import *
 # functions for tasks like adding the constraints, making dose, etc outside of the constructor and
 # call them from here
 
-stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'lungmpc5_2scen_test_1.mat')  # no long working
+stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'lungmpc5_2scen_test_1.mat')
 
 # This is another instance that runs that is larger
 # stoch_mod = imrt_stochastic_model('lung45ProblemData.mat', 'lung45_4scen_equiprob.mat')

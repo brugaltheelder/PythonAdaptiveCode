@@ -8,52 +8,7 @@ from gurobipy import *
 
 
 
-# Data class - This contains only data and nothing else. There are no functions in the data class
-class imrt_data(object):
-    def __init__(self, inputFilename, adaptiveFilename):
-        # This reads in the main data file
-        matFile = io.loadmat(inputFilename)
-        #number voxels, number bixels, num nonzeros in D matrix, number structs
-        self.nVox, self.nBix, self.nDijs, self.nStructs = int(matFile['nvox']), int(matFile['nbixel']), int(
-            matFile['numdijs']), int(matFile['numstructs'])
-        #number oas, number targets, list of oar indices, list of target indices
-        self.numoars, self.numtargets, self.oars, self.targets = int(matFile['numoars']), int(
-            matFile['numtargets']), np.array(matFile['oars']).flatten(), np.array(matFile['targets']).flatten()
 
-        # These are holders for bixel and voxel indices and dijs values. They assume indexing starts at 1 (matlab)
-        #NOTE: You need to run my conversion script in MATLAB to get the proper dose delivered (rebuildVoxelIndices.m)
-        bixe = np.array(matFile['bixe2_new']).flatten() - 1
-        voxe = np.array(matFile['voxe2_new_nvox']).flatten() - 1
-        dijs = np.array(matFile['dijs2_new']).flatten()
-
-        # Build the sparse matrix
-        self.Dmat = sps.csr_matrix((dijs, (bixe, voxe)), shape=(self.nBix, self.nVox))
-        #Reads in mask value (unused due to "structs" matlab array
-        self.maskValue = np.array(matFile['maskValue']).flatten()
-        #Structure index (starting at 1) per voxel
-        self.structPerVoxel = np.array(matFile['structs']).flatten()
-        # Names of organs, mapped to strings
-        self.pickstructs = map(str, matFile['pickstructs'])
-
-
-
-        # Read in structure bounds matrix: format is:
-        # Each row is a structure
-        # Each column is the following:
-        # col0-3: z1minbound, z1meanbound, z1maxbound, z1eudbound
-        # col4-7: z2minbound, z2meanbound, z2maxbound, z2eudbound
-        # col8-11: zSminbound, zSmeanbound, zSmaxbound, zSeudbound
-        self.structBounds = np.array(matFile['structurebounds'])
-        # This is the EUD weight for each structure
-        self.structGamma = np.array(matFile['eudweights']).flatten()
-
-        # Read in the filename for your particular method-specifi class
-        self.adaptiveFilename = adaptiveFilename
-        # Open the file
-        adaptiveFile = io.loadmat(self.adaptiveFilename)
-        # Determine how many scenarios here. This variable has to be in your matlab file. Same thing with s1frac
-        self.numscenarios = int(adaptiveFile['nscen'])
-        self.stageOneFraction = float(adaptiveFile['s1frac'])
 
 
 # This is the class for each scenario. Essentially it is the scenario dose and overall dose for that scenario
@@ -61,6 +16,7 @@ class imrt_data(object):
 class imrt_scenario(object):
     def __init__(self, data, num, m, z1dose):
         assert (isinstance(data, imrt_data))
+
         #Scenario index
         self.num = num
         print 'building scenario', self.num
@@ -396,7 +352,7 @@ class imrt_stochastic_model(object):
             self.structures[s].buildConstraints(self.data, self.m, self.z1, self.scenarios)
 
         # THIS IS THE IMPORTANT PART - add in your class here and remove mine. Mine, upon construction, builds the necessary variables and constraints
-        # necessary for my method. I'm going to add a few other inputs to it so I can mass-run things, but those will come later
+        # for my method. I'm going to add a few other inputs to it so I can mass-run things, but those will come later
         # Use this as a template
         print 'initializing adaptive lung class'
         self.adaLung = imrt_adaptiveLung(self.data, self.m, self.scenarios, self.structures, self.z1)
@@ -404,7 +360,7 @@ class imrt_stochastic_model(object):
         # Uncomment to write out model
         # print 'Writing out model'
         # self.m.write('out.lp')
-        #print 'Model writing done'
+        # print 'Model writing done'
 
     # Calls solver to optimize whatever the model is currently
     def callSolver(self):
@@ -434,6 +390,8 @@ class imrt_stochastic_model(object):
         obj = self.adaLung.obj.getValue()
         io.savemat(outfilename, {'x1': x1, 'xS': xS, 'z1': z1, 'zS': zS, 'obj': obj, 'ptvEUDs': ptvEUDs, 'mld': mld})
 
+
+# todo check the hard bound on option 1 and the linking constraint on option 1
 
 # Structure class - This holds the structure-specific bounds and associated constraints
 class imrt_structure(object):
@@ -490,8 +448,9 @@ class imrt_structure(object):
                     self.buildMaxBound(scenarios[s].z2, m, self.z2bounds[b], s)
 
             elif self.z2bounds[b] > 0 and b == 3:
+                self.z2eud = []
                 for s in range(data.numscenarios):
-                    self.z2eud = self.buildEUDBound(scenarios[s].z2, m, self.z2bounds[b], data, s)[0]
+                    self.z2eud.append(self.buildEUDBound(scenarios[s].z2, m, self.z2bounds[b], data, s)[0])
 
         print 'Generating bounds for structure number', self.index, '(', self.name, ')for zS'
         #zSbounds
