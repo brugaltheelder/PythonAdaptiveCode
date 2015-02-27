@@ -48,7 +48,7 @@ class imrt_scenario(object):
 # that is the PTV EUDs and mean lung doses
 class imrt_adaptiveLung(object):
     # initizlize class
-    def __init__(self, data, m, scenarios, structures, z1dose):
+    def __init__(self, data, m, scenarios, structures, z1dose, alpha=-1):
         # open  up data file, read into this specific structure
         # option 1 is expected bound
         # option 2 is any scenario bound
@@ -83,7 +83,10 @@ class imrt_adaptiveLung(object):
         self.ptvStrictLower = float(adaMatFile['ptvStrictLower'])
         self.ptvLower = float(adaMatFile['ptvLower'])
         self.ptvUpper = float(adaMatFile['ptvUpper'])
-        self.alpha = float(adaMatFile['alpha'])
+        if alpha < 0:
+            self.alpha = float(adaMatFile['alpha'])
+        else:
+            self.alpha = alpha
         self.option = int(adaMatFile['option'])
         self.resolution = float(adaMatFile['resolution'])
 
@@ -308,7 +311,7 @@ class imrt_adaptiveLung(object):
 # Here is where you'd generate an instance of your method-specific class
 
 class imrt_stochastic_model(object):
-    def __init__(self, inputFilename, adaptiveFilename):
+    def __init__(self, inputFilename, adaptiveFilename, manualAlpha=-1):
         # Build data object (and read in data)
         self.data = imrt_data(inputFilename, adaptiveFilename)
         assert (isinstance(self.data, imrt_data))  # makes pycharm see the instance of data and helps with development
@@ -353,7 +356,7 @@ class imrt_stochastic_model(object):
         # for my method. I'm going to add a few other inputs to it so I can mass-run things, but those will come later
         # Use this as a template
         print 'initializing adaptive lung class'
-        self.adaLung = imrt_adaptiveLung(self.data, self.m, self.scenarios, self.structures, self.z1)
+        self.adaLung = imrt_adaptiveLung(self.data, self.m, self.scenarios, self.structures, self.z1, alpha=manualAlpha)
 
         # Uncomment to write out model
         # print 'Writing out model'

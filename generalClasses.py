@@ -1,4 +1,9 @@
-__author__ = 'troy'
+from scipy import io
+import scipy.sparse as sps
+import numpy as np
+from math import exp, log
+from gurobipy import *
+
 # Data class - This contains only data and nothing else. There are no functions in the data class
 class imrt_data(object):
     def __init__(self, inputFilename, adaptiveFilename):
@@ -61,6 +66,28 @@ class imrt_structure(object):
         self.z1bounds = data.structBounds[index - 1, 0:4]
         self.z2bounds = data.structBounds[index - 1, 4:8]
         self.zSbounds = data.structBounds[index - 1, 8:12]
+
+
+    def buildConstraintsNonAdaptive(self, data, m, zdose):
+        # for each set of bounds, for each bound value (if >0), build constraint
+        print 'Generating bounds for structure number', self.index, '(', self.name, ')for z'
+        # z1bounds
+        for b in range(len(self.z1bounds)):
+            if self.zSbounds[b] > 0 and b == 0:
+                # min constraint
+                self.buildMinBound(zdose, m, self.zSbounds[b])
+
+            elif self.zSbounds[b] != 0 and b == 1:
+                # mean constraint
+                self.buildMeanBound(zdose, m, self.zSbounds[b])
+
+            elif self.zSbounds[b] > 0 and b == 2:
+                # max constraint
+                self.buildMaxBound(zdose, m, self.zSbounds[b])
+
+            elif self.zSbounds[b] > 0 and b == 3:
+                self.zeud = self.buildEUDBound(zdose, m, self.z1bounds[b], data)[0]
+
 
     # This goes through each given bound for z1, z2, zS for this structure and builds the constraint as necessary
     def buildConstraintsAdaptive(self, data, m, z1dose, scenarios):

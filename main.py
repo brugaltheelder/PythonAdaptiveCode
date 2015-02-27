@@ -1,30 +1,28 @@
 __author__ = 'troy'
 
-from adaptiveClasses import *
+from solveFunctions import *
+
 
 # params (input file)
 
 # execute run function
 
-# initizlize instance of stochastic model this basically does everything other than solve the model.
-# If you want it to only add bits, then just change how the constructor works (i.e. add in
-# functions for tasks like adding the constraints, making dose, etc outside of the constructor and
-# call them from here
+datafile = 'lungmpc5ProblemData.mat'
+adaptivefile = 'lungmpc5_2scen_test_2.mat'
 
-stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'lungmpc5_2scen_test_1.mat')
+alphas = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.925]
+for a in alphas:
+    print 'Running stochastic model for alpha =', a
+    stochSolve(datafile, adaptivefile, alpha=a)
 
-# This is another instance that runs that is larger
-# stoch_mod = imrt_stochastic_model('lung45ProblemData.mat', 'lung45_4scen_equiprob.mat')
+mldbounds = [13.1864225675219, 14.1147674461116, 14.6387435937487, 15.6642262846281, 16.7711405605526, 17.9454658494049,
+             18.3766104580784, 19.6721049383816, 19.7026398309836, 20.861037748849, 21.107347590444, 21.9131633629582,
+             22.370002419766, 23.5253333484721]
+
+for m in mldbounds:
+    print 'Running non-adaptive for mld bound =', m
+    # nonAdaSolve(datafile,adaptivefile,m)
 
 
-# This solves whatever the model state is
-stoch_mod.callSolver()
 
-# This is a function that calls my cleanup subroutines for my specific class (see ADA on end?)
-stoch_mod.initializeCleanupADA()
 
-# Solve the new model
-stoch_mod.callSolver()
-
-# Output the model
-stoch_mod.outputVariablesADA()
