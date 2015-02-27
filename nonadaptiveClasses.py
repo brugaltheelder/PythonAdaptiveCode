@@ -19,7 +19,7 @@ class imrt_model_nonada(object):
         print 'Initializing Gurobi Model'
         self.m = Model('imrt_nonAda_stoch')
 
-        #Build z variables
+        # Build z variables
         print 'Building Gurobi Variables'
         self.z = [self.m.addVar(lb=-GRB.INFINITY, vtype=GRB.CONTINUOUS, name='z_' + str(j)) for j in
                   xrange(self.data.nVox)]
