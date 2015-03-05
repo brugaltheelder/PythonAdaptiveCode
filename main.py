@@ -7,19 +7,27 @@ from solveFunctions import *
 
 # execute run function
 
-datafile = 'lungmpc5ProblemData.mat'
-adaptivefile = 'lungmpc5_2scen_1.mat'
+# datafile = 'lungmpc5ProblemData.mat'
+#adaptivefile = 'lungmpc5_2scen_test_1.mat'
+# datafile = 'lungmpc5ProblemData.mat'
+# adaptivefile = 'lungmpc5_2scen_1.mat'
+
+datafile = 'lung45ProblemData.mat'
+adaptivefile = 'lung45_4scen_equiprob_1.mat'
+adaptivefile2 = 'lung45_4scen_equiprob_2.mat'
+
+#CHANGE SECOND ADAPTIVE FILE
 
 alphas = [0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.925]
 for a in alphas:
     print 'Running stochastic model for alpha =', a
     stochSolve(datafile, adaptivefile, alpha=a)
 
-adaptivefile = 'lungmpc5_2scen_2.mat'
+
 
 for a in alphas:
     print 'Running stochastic model for alpha =', a
-    stochSolve(datafile, adaptivefile, alpha=a)
+    stochSolve(datafile, adaptivefile2, alpha=a)
 
 # u = 0.5, 1.5
 # mldbounds = [13.1864225675219, 14.1147674461116, 14.6387435937487, 15.6642262846281, 16.7711405605526, 17.9454658494049,

@@ -8,8 +8,8 @@ def stochSolve(datafilename, adaptivefilename, alpha=-1):
     # If you want it to only add bits, then just change how the constructor works (i.e. add in
     # functions for tasks like adding the constraints, making dose, etc outside of the constructor and
     # call them from here
-
-    stoch_mod = imrt_stochastic_model('lungmpc5ProblemData.mat', 'lungmpc5_2scen_test_1.mat', manualAlpha=alpha)
+    print 'Starting stochastic model for alpha = ', alpha
+    stoch_mod = imrt_stochastic_model(datafilename, adaptivefilename, manualAlpha=alpha)
 
     # This is another instance that runs that is larger
     # stoch_mod = imrt_stochastic_model('lung45ProblemData.mat', 'lung45_4scen_equiprob.mat')

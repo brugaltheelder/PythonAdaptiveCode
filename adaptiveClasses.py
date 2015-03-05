@@ -83,10 +83,12 @@ class imrt_adaptiveLung(object):
         self.ptvStrictLower = float(adaMatFile['ptvStrictLower'])
         self.ptvLower = float(adaMatFile['ptvLower'])
         self.ptvUpper = float(adaMatFile['ptvUpper'])
+        print 'alpha input = ', alpha
         if alpha < 0:
             self.alpha = float(adaMatFile['alpha'])
         else:
             self.alpha = alpha
+        print 'alpha was set to:', self.alpha
         self.option = int(adaMatFile['option'])
         self.resolution = float(adaMatFile['resolution'])
 
@@ -378,7 +380,8 @@ class imrt_stochastic_model(object):
         print 'PTV EUDs', ptvEUDs
         mld = [self.adaLung.lungMeanVars[s].X for s in range(self.data.numscenarios)]
         print 'MLD', mld
-        outfilename = self.data.adaptiveFilename[:-4] + '_' + str(self.adaLung.option) + '_' + '_out.mat'
+        outfilename = self.data.adaptiveFilename[:-4] + '_' + str(len(self.adaLung.biomarkers)) + '_' + str(
+            self.adaLung.option) + '_' + str(self.adaLung.alpha) + '_' + '_out.mat'
 
         x1 = np.array([self.x1[i].X for i in range(self.data.nBix)])
         xS = np.array(
@@ -389,7 +392,9 @@ class imrt_stochastic_model(object):
             [np.array([self.scenarios[s].zS[i].X for i in range(self.data.nVox)]) for s in
              range(self.data.numscenarios)])
         obj = self.adaLung.obj.getValue()
-        io.savemat(outfilename, {'x1': x1, 'xS': xS, 'z1': z1, 'zS': zS, 'obj': obj, 'ptvEUDs': ptvEUDs, 'mld': mld})
+        io.savemat(outfilename,
+                   {'alpha': self.adaLung.alpha, 'x1': x1, 'xS': xS, 'z1': z1, 'zS': zS, 'obj': obj, 'ptvEUDs': ptvEUDs,
+                    'mld': mld})
 
 
 
