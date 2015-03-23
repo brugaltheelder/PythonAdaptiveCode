@@ -59,7 +59,7 @@ class imrt_adaptiveLung(object):
 
         print 'Reading in adaptive lung class data'
         # Reads in problem-specific parameters
-        adaMatFile = io.loadmat(data.adaptiveFilename)
+        adaMatFile = io.loadmat(data.basedir + data.adaptiveFilename)
         self.nscen = int(adaMatFile['nscen'])
         self.beta0 = float(adaMatFile['beta0'])
         self.beta1 = float(adaMatFile['beta1'])
@@ -159,8 +159,8 @@ class imrt_adaptiveLung(object):
 
         # uncomment these lines to output the .lp file for sanity checking
         # print 'Writing out model'
-        # m.write('outCleanup.lp')
-        # print 'Model writing done'
+        #m.write('outCleanup.lp')
+        #print 'Model writing done'
 
         pass
 
@@ -180,7 +180,7 @@ class imrt_adaptiveLung(object):
         self.lungMeanPWLvars = [m.addVar(lb=0, vtype=GRB.CONTINUOUS) for s in range(self.nscen)]
         m.update()
         for s in range(self.nscen):
-            for x in range(len(self.option1X) - 1):
+            for x in range(len(self.option1X[s]) - 1):
                 lhs = LinExpr()
                 if (self.option1X[s][x] - self.option1X[s][x + 1] == 0):
                     coef = -(self.option1X[s][x + 1] - self.option1X[s][x]) / (
@@ -197,7 +197,7 @@ class imrt_adaptiveLung(object):
                         self.option1X[s][x + 1] - self.option1X[s][x])) * (self.option1X[s][x])
                     lhs += coef * self.lungMeanVars[s]
                     lhs += self.lungMeanPWLvars[s]
-                    m.addConstr(lhs, GRB.LESS_EQUAL, ub)
+                    m.addConstr(lhs, GRB.LESS_EQUAL, ub, name='pwloption1num' + str(s) + 'step' + str(x))
         m.update()
 
         # now do linking constraints
@@ -266,7 +266,7 @@ class imrt_adaptiveLung(object):
     # This builds points along the option 1 nonlinear constraint that we'll use in the PWL approximation
     def buildPWLforOption1Constraint(self, data):
         self.option1X, self.option1Y = [], []
-
+        print 'Building option 1 PWL Constraint Data'
         for i in range(self.nscen):
             currentX = 0
             upperLimit = -self.gamma02 / (self.gamma12 + self.gamma22 * self.biomarkers[i])
@@ -313,9 +313,10 @@ class imrt_adaptiveLung(object):
 # Here is where you'd generate an instance of your method-specific class
 
 class imrt_stochastic_model(object):
-    def __init__(self, inputFilename, adaptiveFilename, manualAlpha=-1):
+    def __init__(self, inputFilename, adaptiveFilename, manualAlpha=-1, caselocation=''):
         # Build data object (and read in data)
-        self.data = imrt_data(inputFilename, adaptiveFilename)
+        self.data = imrt_data(inputFilename, adaptiveFilename, caselocation)
+
         assert (isinstance(self.data, imrt_data))  # makes pycharm see the instance of data and helps with development
 
         # initialize gurobi model (m is what you'll add variables and constraints to)
@@ -380,7 +381,8 @@ class imrt_stochastic_model(object):
         print 'PTV EUDs', ptvEUDs
         mld = [self.adaLung.lungMeanVars[s].X for s in range(self.data.numscenarios)]
         print 'MLD', mld
-        outfilename = self.data.adaptiveFilename[:-4] + '_' + str(len(self.adaLung.biomarkers)) + '_' + str(
+        outfilename = self.data.basedir + self.data.adaptiveFilename[:-4] + '_' + str(
+            len(self.adaLung.biomarkers)) + '_' + str(
             self.adaLung.option) + '_' + str(self.adaLung.alpha) + '_' + '_out.mat'
 
         x1 = np.array([self.x1[i].X for i in range(self.data.nBix)])

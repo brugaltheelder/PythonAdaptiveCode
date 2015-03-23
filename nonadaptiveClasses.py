@@ -11,8 +11,9 @@ from generalClasses import *
 
 class imrt_model_nonada(object):
     # Initialize class
-    def __init__(self, inputFilename, adaptiveFilename, mldbound=20):
-        self.data = imrt_data(inputFilename, adaptiveFilename)
+    def __init__(self, inputFilename, adaptiveFilename, mldbound=20, caselocation=''):
+        self.data = imrt_data(inputFilename, adaptiveFilename, caselocation)
+
         assert (isinstance(self.data, imrt_data))  # makes pycharm see the instance of data and helps with development
 
         # initialize gurobi model (m is what you'll add variables and constraints to)
@@ -71,7 +72,7 @@ class imrt_model_nonada(object):
         print 'PTV EUD', ptvEUD
         mld = self.nonadaLung.lungMeanVar.X
         print 'MLD', mld
-        outfilename = 'nonAda_' + self.data.adaptiveFilename[:-4] + '_' + str(
+        outfilename = self.data.basedir + 'nonAda_' + self.data.adaptiveFilename[:-4] + '_' + str(
             len(self.nonadaLung.biomarkers)) + '_' + str(round(self.nonadaLung.meanLungBoundNonAda * 100)) + '_out.mat'
 
         x = np.array([self.x[i].X for i in range(self.data.nBix)])
@@ -103,7 +104,7 @@ class imrt_nonAdaptiveLung(object):
 
         print 'Reading in adaptive lung class data'
         # Reads in problem-specific parameters
-        adaMatFile = io.loadmat(data.adaptiveFilename)
+        adaMatFile = io.loadmat(data.basedir + data.adaptiveFilename)
         self.nscen = int(adaMatFile['nscen'])
         self.beta0 = float(adaMatFile['beta0'])
         self.beta1 = float(adaMatFile['beta1'])
